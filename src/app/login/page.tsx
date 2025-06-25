@@ -32,7 +32,12 @@ export default function LoginPage() {
 
       if (data.user) {
         toast.success('Login realizado com sucesso!')
-        router.push('/dashboard')
+        
+        // Aguardar um pouco para garantir que a sessão seja estabelecida
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
+        // Usar window.location para forçar refresh completo
+        window.location.href = '/dashboard'
       }
     } catch (error: any) {
       toast.error('Erro ao fazer login')
@@ -66,16 +71,22 @@ export default function LoginPage() {
           .from('user_profiles')
           .insert({
             id: data.user.id,
+            email: email,
             first_name: 'Novo',
-            last_name: 'Utilizador',
-            profile_type: 'project_manager'
+            last_name: 'Utilizador'
           })
 
         if (profileError) {
           console.error('Erro ao criar perfil:', profileError)
         }
 
-        toast.success('Conta criada com sucesso! Verifique o seu email.')
+        toast.success('Conta criada com sucesso!')
+        
+        // Aguardar um pouco para garantir que a sessão seja estabelecida
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
+        // Usar window.location para forçar refresh completo
+        window.location.href = '/dashboard'
       }
     } catch (error: any) {
       toast.error('Erro ao criar conta')
