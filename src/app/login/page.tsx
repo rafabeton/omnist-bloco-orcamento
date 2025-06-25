@@ -1,8 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -12,8 +11,18 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const router = useRouter()
   const supabase = createClient()
+
+  // Verificar se já está logado ao carregar a página
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        window.location.replace('/dashboard')
+      }
+    }
+    checkUser()
+  }, [supabase])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -27,21 +36,21 @@ export default function LoginPage() {
 
       if (error) {
         toast.error(error.message)
+        setLoading(false)
         return
       }
 
-      if (data.user) {
+      if (data.user && data.session) {
         toast.success('Login realizado com sucesso!')
         
-        // Aguardar um pouco para garantir que a sessão seja estabelecida
-        await new Promise(resolve => setTimeout(resolve, 500))
+        // Aguardar estabelecimento da sessão
+        await new Promise(resolve => setTimeout(resolve, 1000))
         
-        // Usar window.location para forçar refresh completo
-        window.location.href = '/dashboard'
+        // Forçar redirecionamento completo
+        window.location.replace('/dashboard')
       }
     } catch (error: any) {
       toast.error('Erro ao fazer login')
-    } finally {
       setLoading(false)
     }
   }
@@ -49,6 +58,11 @@ export default function LoginPage() {
   const handleSignUp = async () => {
     if (!email || !password) {
       toast.error('Por favor, preencha email e password')
+      return
+    }
+
+    if (password.length < 6) {
+      toast.error('Password deve ter pelo menos 6 caracteres')
       return
     }
 
@@ -62,6 +76,7 @@ export default function LoginPage() {
 
       if (error) {
         toast.error(error.message)
+        setLoading(false)
         return
       }
 
@@ -82,11 +97,13 @@ export default function LoginPage() {
 
         toast.success('Conta criada com sucesso!')
         
-        // Aguardar um pouco para garantir que a sessão seja estabelecida
-        await new Promise(resolve => setTimeout(resolve, 500))
-        
-        // Usar window.location para forçar refresh completo
-        window.location.href = '/dashboard'
+        // Se o utilizador foi criado e confirmado automaticamente
+        if (data.session) {
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          window.location.replace('/dashboard')
+        } else {
+          toast.info('Verifique o seu email para confirmar a conta')
+        }
       }
     } catch (error: any) {
       toast.error('Erro ao criar conta')
@@ -120,6 +137,7 @@ export default function LoginPage() {
                 placeholder="seu@email.com"
                 required
                 className="mt-1"
+                disabled={loading}
               />
             </div>
             
@@ -135,6 +153,7 @@ export default function LoginPage() {
                 placeholder="••••••••"
                 required
                 className="mt-1"
+                disabled={loading}
               />
             </div>
 
@@ -154,7 +173,7 @@ export default function LoginPage() {
                 disabled={loading}
                 className="w-full"
               >
-                Criar Nova Conta
+                {loading ? 'A criar conta...' : 'Criar Nova Conta'}
               </Button>
             </div>
           </form>

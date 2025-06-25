@@ -2,8 +2,11 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({
-    request,
+  // Create a response object to pass to the Supabase client
+  let response = NextResponse.next({
+    request: {
+      headers: request.headers,
+    },
   })
 
   const supabase = createServerClient(
@@ -16,45 +19,46 @@ export async function middleware(request: NextRequest) {
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({
+          response = NextResponse.next({
             request,
           })
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
+            response.cookies.set(name, value, options)
           )
         },
       },
     }
   )
 
-  // Refresh session if expired
-  await supabase.auth.getSession()
+  // Get the current session
+  const { data: { session } } = await supabase.auth.getSession()
+  
+  const isLoginPage = request.nextUrl.pathname === '/login'
+  const isDashboardPage = request.nextUrl.pathname.startsWith('/dashboard')
+  const isRootPage = request.nextUrl.pathname === '/'
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  // Se o utilizador está autenticado e tenta aceder ao login, redirecionar para dashboard
-  if (user && request.nextUrl.pathname.startsWith('/login')) {
+  // If user has session and is on login page, redirect to dashboard
+  if (session && isLoginPage) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)
   }
 
-  // Se não há utilizador e não está numa página pública, redirecionar para login
-  if (
-    !user &&
-    !request.nextUrl.pathname.startsWith('/login') &&
-    !request.nextUrl.pathname.startsWith('/auth') &&
-    !request.nextUrl.pathname.startsWith('/_next') &&
-    !request.nextUrl.pathname.startsWith('/api')
-  ) {
+  // If user has session and is on root, redirect to dashboard
+  if (session && isRootPage) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/dashboard'
+    return NextResponse.redirect(url)
+  }
+
+  // If no session and trying to access protected routes, redirect to login
+  if (!session && (isDashboardPage || isRootPage)) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
-  return supabaseResponse
+  return response
 }
 
 export const config = {
