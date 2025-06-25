@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,17 +12,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const supabase = createClient()
-
-  // Verificar se já está logado ao carregar a página
-  useEffect(() => {
-    const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session) {
-        window.location.replace('/dashboard')
-      }
-    }
-    checkUser()
-  }, [supabase])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -43,11 +32,10 @@ export default function LoginPage() {
       if (data.user && data.session) {
         toast.success('Login realizado com sucesso!')
         
-        // Aguardar estabelecimento da sessão
-        await new Promise(resolve => setTimeout(resolve, 1000))
-        
-        // Forçar redirecionamento completo
-        window.location.replace('/dashboard')
+        // Aguardar um momento e redirecionar
+        setTimeout(() => {
+          window.location.href = '/dashboard'
+        }, 1500)
       }
     } catch (error: any) {
       toast.error('Erro ao fazer login')
@@ -99,15 +87,16 @@ export default function LoginPage() {
         
         // Se o utilizador foi criado e confirmado automaticamente
         if (data.session) {
-          await new Promise(resolve => setTimeout(resolve, 1000))
-          window.location.replace('/dashboard')
+          setTimeout(() => {
+            window.location.href = '/dashboard'
+          }, 1500)
         } else {
           toast.info('Verifique o seu email para confirmar a conta')
+          setLoading(false)
         }
       }
     } catch (error: any) {
       toast.error('Erro ao criar conta')
-    } finally {
       setLoading(false)
     }
   }

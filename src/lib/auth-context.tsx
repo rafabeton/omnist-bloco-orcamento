@@ -47,16 +47,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(session)
         setUser(session?.user ?? null)
         setLoading(false)
-
-        // Handle sign in
-        if (event === 'SIGNED_IN' && session) {
-          window.location.replace('/dashboard')
-        }
         
-        // Handle sign out
-        if (event === 'SIGNED_OUT') {
-          window.location.replace('/login')
-        }
+        // Log para debug
+        console.log('Auth state change:', event, session?.user?.email)
       }
     )
 

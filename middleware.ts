@@ -2,7 +2,6 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export async function middleware(request: NextRequest) {
-  // Create a response object to pass to the Supabase client
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -33,26 +32,31 @@ export async function middleware(request: NextRequest) {
   // Get the current session
   const { data: { session } } = await supabase.auth.getSession()
   
-  const isLoginPage = request.nextUrl.pathname === '/login'
-  const isDashboardPage = request.nextUrl.pathname.startsWith('/dashboard')
-  const isRootPage = request.nextUrl.pathname === '/'
+  const pathname = request.nextUrl.pathname
 
-  // If user has session and is on login page, redirect to dashboard
-  if (session && isLoginPage) {
+  // Se está na página de login e tem sessão, redirecionar para dashboard
+  if (pathname === '/login' && session) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)
   }
 
-  // If user has session and is on root, redirect to dashboard
-  if (session && isRootPage) {
+  // Se está na raiz e tem sessão, redirecionar para dashboard
+  if (pathname === '/' && session) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)
   }
 
-  // If no session and trying to access protected routes, redirect to login
-  if (!session && (isDashboardPage || isRootPage)) {
+  // Se não tem sessão e está tentando acessar dashboard, redirecionar para login
+  if (pathname.startsWith('/dashboard') && !session) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    return NextResponse.redirect(url)
+  }
+
+  // Se não tem sessão e está na raiz, redirecionar para login
+  if (pathname === '/' && !session) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
