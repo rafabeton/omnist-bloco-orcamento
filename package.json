@@ -8,13 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "type-check": "tsc --noEmit",
-    "supabase:start": "supabase start",
-    "supabase:stop": "supabase stop",
-    "supabase:reset": "supabase db reset",
-    "supabase:deploy": "supabase functions deploy",
-    "deploy:vercel": "vercel --prod",
-    "setup": "npm install && npm run build"
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.2",
@@ -28,21 +22,19 @@
     "@supabase/supabase-js": "^2.38.4",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
-    "lucide-react": "^0.294.0",
+    "lucide-react": "^0.460.0",
     "next": "14.0.4",
-    "react": "^18",
-    "react-dom": "^18",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
     "react-hook-form": "^7.48.2",
     "sonner": "^1.2.4",
     "tailwind-merge": "^2.1.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^2.1.4",
-    "@tailwindcss/postcss": "^0.0.0-insiders.a6be148",
     "@types/node": "^20",
-    "@types/react": "^18",
-    "@types/react-dom": "^18",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
     "eslint": "^8",
     "eslint-config-next": "14.0.4",
     "postcss": "^8",
@@ -63,10 +55,6 @@
   ],
   "author": "Omnist Team",
   "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/omnist/bloco-orcamento"
-  },
   "engines": {
     "node": ">=18.0.0"
   }
