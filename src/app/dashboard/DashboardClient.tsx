@@ -8,14 +8,12 @@ import ContractorDashboard from '@/components/dashboard/ContractorDashboard';
 
 interface UserProfile {
   id: string;
-  email: string;
+  email?: string;
   first_name?: string;
   last_name?: string;
-  company_name?: string;
-  // Campos que podem existir ou não
+  company?: string;
+  // Usar apenas campos que existem na tabela atual
   user_type?: 'common_user' | 'contractor' | 'admin';
-  city?: string;
-  preferences?: any;
 }
 
 export default function DashboardClient() {
@@ -23,6 +21,12 @@ export default function DashboardClient() {
   const [loading, setLoading] = useState(true);
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const [selectedUserType, setSelectedUserType] = useState<'common_user' | 'contractor'>('common_user');
+  const [profileForm, setProfileForm] = useState({
+    first_name: '',
+    last_name: '',
+    city: '',
+    user_type: 'common_user' as 'common_user' | 'contractor'
+  });
 
   const router = useRouter();
   const supabase = createClient();
@@ -42,197 +46,175 @@ export default function DashboardClient() {
         return;
       }
 
-      // Buscar perfil do usuário
+      console.log('Auth state change:', user.email);
+
+      // Buscar perfil do usuário - usar apenas campos que existem
       const { data: profileData, error: profileError } = await supabase
         .from('user_profiles')
-        .select('*')
+        .select('id, first_name, last_name, company')
         .eq('id', user.id)
         .single();
 
-      if (profileError) {
+      if (profileError && profileError.code !== 'PGRST116') {
         console.error('Erro ao buscar perfil:', profileError);
-        
-        // Criar perfil básico se não existir
-        const newProfile = {
-          id: user.id,
-          email: user.email || '',
-          first_name: '',
-          last_name: '',
-          company_name: '',
-          user_type: 'common_user'
-        };
+      }
 
-        const { error: insertError } = await supabase
-          .from('user_profiles')
-          .insert(newProfile);
-
-        if (insertError) {
-          console.error('Erro ao criar perfil:', insertError);
-        }
-
-        setProfile(newProfile);
+      // Se perfil não existe ou está incompleto, mostrar setup
+      if (!profileData || !profileData.first_name) {
+        console.log('Perfil incompleto, mostrando setup');
         setShowProfileSetup(true);
+        setLoading(false);
         return;
       }
 
-      // Verificar se perfil precisa de configuração
-      const needsSetup = !profileData.first_name || 
-                        !profileData.last_name || 
-                        !profileData.user_type;
+      // Perfil existe e está completo
+      setProfile({
+        id: user.id,
+        email: user.email,
+        first_name: profileData.first_name,
+        last_name: profileData.last_name,
+        company: profileData.company,
+        user_type: 'common_user' // Default para usuário comum
+      });
 
-      if (needsSetup) {
-        setProfile(profileData);
-        setShowProfileSetup(true);
-        return;
-      }
+      setLoading(false);
 
-      setProfile(profileData);
     } catch (error) {
       console.error('Erro geral:', error);
-    } finally {
       setLoading(false);
     }
   };
 
-  const handleProfileSetup = async (formData: any) => {
+  const handleProfileSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // Preparar dados para atualização
-      const updateData: any = {
-        first_name: formData.first_name,
-        last_name: formData.last_name,
-        updated_at: new Date().toISOString()
-      };
-
-      // Adicionar campos se existirem na tabela
-      if (formData.user_type) updateData.user_type = formData.user_type;
-      if (formData.company_name) updateData.company_name = formData.company_name;
-      if (formData.city) updateData.city = formData.city;
-
-      const { error } = await supabase
+      // Tentar atualizar perfil existente primeiro
+      const { data: updateData, error: updateError } = await supabase
         .from('user_profiles')
-        .update(updateData)
-        .eq('id', user.id);
+        .update({
+          first_name: profileForm.first_name,
+          last_name: profileForm.last_name,
+          email: user.email, // Incluir email obrigatório
+        })
+        .eq('id', user.id)
+        .select()
+        .single();
 
-      if (error) {
-        console.error('Erro ao atualizar perfil:', error);
-        return;
+      if (updateError) {
+        console.log('Erro ao atualizar, tentando criar:', updateError);
+        
+        // Se falhar, tentar criar novo perfil
+        const { data: insertData, error: insertError } = await supabase
+          .from('user_profiles')
+          .insert({
+            id: user.id,
+            email: user.email, // Incluir email obrigatório
+            first_name: profileForm.first_name,
+            last_name: profileForm.last_name,
+          })
+          .select()
+          .single();
+
+        if (insertError) {
+          console.error('Erro ao criar perfil:', insertError);
+          return;
+        }
       }
 
       // Atualizar estado local
-      setProfile(prev => prev ? { ...prev, ...updateData } : null);
+      setProfile({
+        id: user.id,
+        email: user.email,
+        first_name: profileForm.first_name,
+        last_name: profileForm.last_name,
+        user_type: profileForm.user_type
+      });
+
       setShowProfileSetup(false);
+
     } catch (error) {
       console.error('Erro ao salvar perfil:', error);
     }
   };
 
   const handleLogout = async () => {
-    try {
-      await supabase.auth.signOut();
-      router.push('/login');
-    } catch (error) {
-      console.error('Erro ao fazer logout:', error);
-    }
-  };
-
-  // Determinar tipo de usuário (com fallback)
-  const getUserType = (): 'common_user' | 'contractor' => {
-    if (profile?.user_type) {
-      return profile.user_type === 'contractor' ? 'contractor' : 'common_user';
-    }
-    
-    // Fallback: detectar baseado em dados existentes
-    if (profile?.company_name && profile.company_name.trim() !== '') {
-      return 'contractor';
-    }
-    
-    return 'common_user';
+    await supabase.auth.signOut();
+    router.push('/login');
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <div className="flex items-center justify-center min-h-screen">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            <p className="text-gray-600">Carregando dashboard...</p>
-          </div>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Carregando dashboard...</p>
         </div>
       </div>
     );
   }
 
-  // Modal de configuração de perfil
-  if (showProfileSetup && profile) {
+  if (showProfileSetup) {
     return (
-      <div className="min-h-screen bg-gray-50 py-12 px-4">
-        <div className="max-w-2xl mx-auto">
-          <div className="bg-white rounded-lg shadow-lg p-8">
-            <h1 className="text-2xl font-bold text-gray-900 mb-6">
-              Complete o seu Perfil
-            </h1>
+      <div className="min-h-screen bg-gray-50 py-8">
+        <div className="max-w-2xl mx-auto px-4">
+          <div className="bg-white rounded-lg shadow-md p-8">
+            <h1 className="text-2xl font-bold text-gray-900 mb-6">Complete o seu Perfil</h1>
             
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              const formData = new FormData(e.currentTarget);
-              handleProfileSetup({
-                first_name: formData.get('first_name'),
-                last_name: formData.get('last_name'),
-                company_name: formData.get('company_name'),
-                city: formData.get('city'),
-                user_type: selectedUserType
-              });
-            }}>
-              {/* Seleção de Tipo de Usuário */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-3">
-                  Tipo de Conta
-                </label>
-                <div className="grid grid-cols-2 gap-4">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedUserType('common_user')}
-                    className={`p-4 border-2 rounded-lg text-center transition-colors ${
-                      selectedUserType === 'common_user'
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="text-2xl mb-2">🏠</div>
-                    <div className="font-medium">Usuário Comum</div>
-                    <div className="text-sm text-gray-600">Reformas pessoais</div>
-                  </button>
-                  
-                  <button
-                    type="button"
-                    onClick={() => setSelectedUserType('contractor')}
-                    className={`p-4 border-2 rounded-lg text-center transition-colors ${
-                      selectedUserType === 'contractor'
-                        ? 'border-blue-500 bg-blue-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="text-2xl mb-2">🔨</div>
-                    <div className="font-medium">Empreiteiro</div>
-                    <div className="text-sm text-gray-600">Profissional</div>
-                  </button>
-                </div>
+            {/* Seleção de Tipo de Conta */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-3">
+                Tipo de Conta
+              </label>
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedUserType('common_user');
+                    setProfileForm({...profileForm, user_type: 'common_user'});
+                  }}
+                  className={`p-4 rounded-lg border-2 text-center transition-colors ${
+                    selectedUserType === 'common_user'
+                      ? 'border-blue-500 bg-blue-50'
+                      : 'border-gray-300 hover:border-gray-400'
+                  }`}
+                >
+                  <div className="font-medium">Usuário Comum</div>
+                  <div className="text-sm text-gray-600">Reformas pessoais</div>
+                </button>
+                
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedUserType('contractor');
+                    setProfileForm({...profileForm, user_type: 'contractor'});
+                  }}
+                  className={`p-4 rounded-lg border-2 text-center transition-colors ${
+                    selectedUserType === 'contractor'
+                      ? 'border-orange-500 bg-orange-50'
+                      : 'border-gray-300 hover:border-gray-400'
+                  }`}
+                >
+                  <div className="font-medium">Empreiteiro</div>
+                  <div className="text-sm text-gray-600">Profissional</div>
+                </button>
               </div>
+            </div>
 
-              {/* Campos do formulário */}
-              <div className="grid grid-cols-2 gap-4 mb-4">
+            <form onSubmit={handleProfileSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Nome *
                   </label>
                   <input
                     type="text"
-                    name="first_name"
-                    defaultValue={profile.first_name || ''}
                     required
+                    value={profileForm.first_name}
+                    onChange={(e) => setProfileForm({...profileForm, first_name: e.target.value})}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -243,36 +225,22 @@ export default function DashboardClient() {
                   </label>
                   <input
                     type="text"
-                    name="last_name"
-                    defaultValue={profile.last_name || ''}
                     required
+                    value={profileForm.last_name}
+                    onChange={(e) => setProfileForm({...profileForm, last_name: e.target.value})}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
 
-              {selectedUserType === 'contractor' && (
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Nome da Empresa
-                  </label>
-                  <input
-                    type="text"
-                    name="company_name"
-                    defaultValue={profile.company_name || ''}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              )}
-
-              <div className="mb-6">
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Cidade
                 </label>
                 <input
                   type="text"
-                  name="city"
-                  defaultValue={profile.city || ''}
+                  value={profileForm.city}
+                  onChange={(e) => setProfileForm({...profileForm, city: e.target.value})}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -290,89 +258,11 @@ export default function DashboardClient() {
     );
   }
 
-  if (!profile) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-gray-400 text-6xl mb-4">👤</div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Perfil não encontrado</h1>
-          <p className="text-gray-600 mb-4">Redirecionando...</p>
-        </div>
-      </div>
-    );
+  // Renderizar dashboard baseado no tipo de usuário
+  if (profile?.user_type === 'contractor') {
+    return <ContractorDashboard profile={profile} onLogout={handleLogout} />;
   }
 
-  const userType = getUserType();
-
-  return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header Global */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            {/* Logo e Título */}
-            <div className="flex items-center space-x-4">
-              <h1 className="text-xl font-bold text-gray-900">
-                Omnist Bloco de Orçamento
-              </h1>
-              {userType === 'contractor' && (
-                <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
-                  PRO
-                </span>
-              )}
-            </div>
-
-            {/* Menu do Usuário */}
-            <div className="flex items-center space-x-4">
-              <div className="text-sm text-gray-600">
-                Olá, {profile.first_name || profile.email}
-                {profile.company_name && (
-                  <span className="block text-xs text-gray-500">
-                    {profile.company_name}
-                  </span>
-                )}
-              </div>
-              
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => setShowProfileSetup(true)}
-                  className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
-                  title="Configurações"
-                >
-                  ⚙️
-                </button>
-                
-                <button
-                  onClick={handleLogout}
-                  className="px-3 py-1 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700"
-                >
-                  Sair
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Conteúdo Principal */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Renderizar dashboard baseado no tipo de usuário */}
-        {userType === 'contractor' ? (
-          <ContractorDashboard />
-        ) : (
-          <CommonUserDashboard />
-        )}
-      </main>
-
-      {/* Debug Info (apenas em desenvolvimento) */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="fixed bottom-4 right-4 bg-black text-white p-2 rounded text-xs">
-          <div>Tipo: {userType}</div>
-          <div>ID: {profile.id.slice(0, 8)}...</div>
-          <div>Schema: Adaptado</div>
-        </div>
-      )}
-    </div>
-  );
+  return <CommonUserDashboard profile={profile} onLogout={handleLogout} />;
 }
 

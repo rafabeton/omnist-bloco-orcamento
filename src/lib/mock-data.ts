@@ -409,3 +409,93 @@ export function getProjectType(projectTypeId: string) {
   return PROJECT_TYPES.find(type => type.id === projectTypeId);
 }
 
+
+// TIPOS DE PROJETO
+export interface ProjectType {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  basePrice: {
+    basic: number;
+    medium: number;
+    luxury: number;
+  };
+  duration: string;
+}
+
+export const mockProjectTypes: ProjectType[] = [
+  {
+    id: 'kitchen',
+    name: 'Cozinha',
+    description: 'Renovação completa ou parcial da cozinha',
+    icon: '🍳',
+    basePrice: {
+      basic: 200,
+      medium: 350,
+      luxury: 600
+    },
+    duration: '2-4 semanas'
+  },
+  {
+    id: 'bathroom',
+    name: 'Casa de Banho',
+    description: 'Remodelação de casa de banho completa',
+    icon: '🚿',
+    basePrice: {
+      basic: 180,
+      medium: 300,
+      luxury: 500
+    },
+    duration: '1-3 semanas'
+  },
+  {
+    id: 'living_room',
+    name: 'Sala de Estar',
+    description: 'Renovação de sala com pintura e pavimentos',
+    icon: '🛋️',
+    basePrice: {
+      basic: 120,
+      medium: 200,
+      luxury: 350
+    },
+    duration: '1-2 semanas'
+  },
+  {
+    id: 'bedroom',
+    name: 'Quarto',
+    description: 'Remodelação de quarto com armários',
+    icon: '🛏️',
+    basePrice: {
+      basic: 100,
+      medium: 180,
+      luxury: 300
+    },
+    duration: '1-2 semanas'
+  },
+  {
+    id: 'office',
+    name: 'Escritório',
+    description: 'Adaptação de espaço para escritório',
+    icon: '💼',
+    basePrice: {
+      basic: 90,
+      medium: 150,
+      luxury: 250
+    },
+    duration: '1 semana'
+  },
+  {
+    id: 'balcony',
+    name: 'Varanda',
+    description: 'Renovação e impermeabilização de varanda',
+    icon: '🌿',
+    basePrice: {
+      basic: 80,
+      medium: 140,
+      luxury: 220
+    },
+    duration: '1 semana'
+  }
+];
+
