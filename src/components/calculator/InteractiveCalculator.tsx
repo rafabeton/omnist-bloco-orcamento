@@ -5,7 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { mockProjectTypes, QualityStandard } from '@/lib/mock-data';
+import { mockProjectTypes } from '@/lib/mock-data';
+
+type QualityStandard = 'basic' | 'medium' | 'luxury';
 
 interface CalculatorState {
   selectedProject: string | null;

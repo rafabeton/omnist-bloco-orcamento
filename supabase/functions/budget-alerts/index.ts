@@ -1,197 +1,176 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
 interface BudgetAlert {
-  categoryId: string
-  categoryName: string
-  projectId: string
-  projectName: string
-  budgetedAmount: number
-  spentAmount: number
-  percentage: number
-  threshold: number
-  alertType: 'warning' | 'over_budget'
+  id: string;
+  project_id: string;
+  category_id: string;
+  alert_type: 'warning' | 'critical' | 'exceeded';
+  threshold_percentage: number;
+  current_percentage: number;
+  message: string;
 }
 
-serve(async (req) => {
-  // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+function createErrorResponse(message: string, status: number = 400): Response {
+  return new Response(
+    JSON.stringify({ error: message }),
+    {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    }
+  );
+}
+
+function createSuccessResponse<T>(data: T, message?: string): Response {
+  return new Response(
+    JSON.stringify({ success: true, data, message }),
+    {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }
+  );
+}
+
+serve(async (req: Request) => {
+  if (req.method !== 'POST') {
+    return createErrorResponse('Method not allowed', 405);
   }
 
   try {
-    const supabaseClient = createClient(
+    const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
     const { projectId } = await req.json()
 
+    if (!projectId) {
+      return createErrorResponse('projectId is required');
+    }
+
     // Get all budget categories for the project
-    const { data: categories, error: categoriesError } = await supabaseClient
+    const { data: categories, error: categoriesError } = await supabase
       .from('budget_categories')
       .select(`
         *,
-        projects(id, name)
+        purchases(amount, status)
       `)
-      .eq('project_id', projectId || '')
-      .eq('is_active', true)
+      .eq('project_id', projectId)
 
     if (categoriesError) {
-      throw new Error('Failed to fetch budget categories')
+      throw new Error(`Failed to fetch categories: ${categoriesError.message}`);
     }
 
     const alerts: BudgetAlert[] = []
 
-    // Check each category for alerts
-    for (const category of categories || []) {
-      const percentage = category.budgeted_amount > 0 
-        ? (category.spent_amount / category.budgeted_amount) * 100 
-        : 0
+    // Check each category for budget alerts
+    for (const category of categories) {
+      const budgetedAmount = category.budgeted_amount || 0
+      const spentAmount = category.purchases
+        ?.filter((p: any) => p.status === 'approved')
+        ?.reduce((sum: number, p: any) => sum + p.amount, 0) || 0
 
-      // Over budget alert
-      if (category.spent_amount > category.budgeted_amount) {
-        alerts.push({
-          categoryId: category.id,
-          categoryName: category.name,
-          projectId: category.project_id,
-          projectName: category.projects.name,
-          budgetedAmount: category.budgeted_amount,
-          spentAmount: category.spent_amount,
-          percentage,
-          threshold: category.alert_threshold,
-          alertType: 'over_budget'
-        })
+      const percentage = budgetedAmount > 0 ? (spentAmount / budgetedAmount) * 100 : 0
+
+      let alertType: 'warning' | 'critical' | 'exceeded' | null = null
+      let message = ''
+
+      if (percentage >= 100) {
+        alertType = 'exceeded'
+        message = `Budget exceeded by ${(percentage - 100).toFixed(1)}%`
+      } else if (percentage >= 90) {
+        alertType = 'critical'
+        message = `Budget at ${percentage.toFixed(1)}% - Critical level`
+      } else if (percentage >= 75) {
+        alertType = 'warning'
+        message = `Budget at ${percentage.toFixed(1)}% - Warning level`
       }
-      // Warning alert (approaching threshold)
-      else if (percentage >= category.alert_threshold) {
+
+      if (alertType) {
         alerts.push({
-          categoryId: category.id,
-          categoryName: category.name,
-          projectId: category.project_id,
-          projectName: category.projects.name,
-          budgetedAmount: category.budgeted_amount,
-          spentAmount: category.spent_amount,
-          percentage,
-          threshold: category.alert_threshold,
-          alertType: 'warning'
+          id: `${category.id}-${alertType}`,
+          project_id: projectId,
+          category_id: category.id,
+          alert_type: alertType,
+          threshold_percentage: alertType === 'exceeded' ? 100 : alertType === 'critical' ? 90 : 75,
+          current_percentage: percentage,
+          message
         })
       }
     }
 
-    // If no specific project requested, check all active projects
-    if (!projectId) {
-      const { data: allCategories, error: allCategoriesError } = await supabaseClient
-        .from('budget_categories')
-        .select(`
-          *,
-          projects!inner(id, name, status)
-        `)
-        .eq('is_active', true)
-        .eq('projects.status', 'active')
+    // Store alerts in database
+    if (alerts.length > 0) {
+      const { error: alertsError } = await supabase
+        .from('budget_alerts')
+        .upsert(alerts, { onConflict: 'project_id,category_id,alert_type' })
 
-      if (!allCategoriesError && allCategories) {
-        for (const category of allCategories) {
-          const percentage = category.budgeted_amount > 0 
-            ? (category.spent_amount / category.budgeted_amount) * 100 
-            : 0
-
-          if (category.spent_amount > category.budgeted_amount) {
-            alerts.push({
-              categoryId: category.id,
-              categoryName: category.name,
-              projectId: category.project_id,
-              projectName: category.projects.name,
-              budgetedAmount: category.budgeted_amount,
-              spentAmount: category.spent_amount,
-              percentage,
-              threshold: category.alert_threshold,
-              alertType: 'over_budget'
-            })
-          } else if (percentage >= category.alert_threshold) {
-            alerts.push({
-              categoryId: category.id,
-              categoryName: category.name,
-              projectId: category.project_id,
-              projectName: category.projects.name,
-              budgetedAmount: category.budgeted_amount,
-              spentAmount: category.spent_amount,
-              percentage,
-              threshold: category.alert_threshold,
-              alertType: 'warning'
-            })
-          }
-        }
+      if (alertsError) {
+        console.error('Failed to store alerts:', alertsError);
       }
     }
 
-    // Send email notifications if there are critical alerts
-    const criticalAlerts = alerts.filter(alert => alert.alertType === 'over_budget')
+    // Send email notifications for critical alerts
+    const criticalAlerts = alerts.filter(a => a.alert_type === 'critical' || a.alert_type === 'exceeded')
     
     if (criticalAlerts.length > 0 && Deno.env.get('RESEND_API_KEY')) {
-      // Get project managers for notification
-      const projectIds = [...new Set(criticalAlerts.map(alert => alert.projectId))]
-      
-      const { data: managers, error: managersError } = await supabaseClient
-        .from('project_members')
+      // Get project owner email
+      const { data: project, error: projectError } = await supabase
+        .from('projects')
         .select(`
-          user_id,
-          project_id,
-          user_profiles!inner(id, first_name, last_name),
-          projects!inner(id, name)
+          *,
+          user_profiles(email, first_name)
         `)
-        .in('project_id', projectIds)
-        .eq('role', 'manager')
+        .eq('id', projectId)
+        .single()
 
-      if (!managersError && managers) {
-        // Group alerts by project and send notifications
-        const alertsByProject = criticalAlerts.reduce((acc, alert) => {
-          if (!acc[alert.projectId]) {
-            acc[alert.projectId] = []
+      if (!projectError && project?.user_profiles?.email) {
+        try {
+          const emailResponse = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${Deno.env.get('RESEND_API_KEY')}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              from: 'alerts@omnist.com',
+              to: [project.user_profiles.email],
+              subject: `Budget Alert - ${project.name}`,
+              html: `
+                <h2>Budget Alert for ${project.name}</h2>
+                <p>Hello ${project.user_profiles.first_name},</p>
+                <p>We detected budget issues in your project:</p>
+                <ul>
+                  ${criticalAlerts.map(alert => `<li>${alert.message}</li>`).join('')}
+                </ul>
+                <p>Please review your budget and take appropriate action.</p>
+                <p>Best regards,<br>Omnist Team</p>
+              `
+            })
+          })
+
+          if (!emailResponse.ok) {
+            console.error('Failed to send email notification');
           }
-          acc[alert.projectId].push(alert)
-          return acc
-        }, {} as Record<string, BudgetAlert[]>)
-
-        // Here you would integrate with Resend API to send emails
-        // For now, we'll just log the notifications
-        console.log('Budget alerts to send:', alertsByProject)
+        } catch (emailError: any) {
+          console.error('Email notification error:', emailError);
+        }
       }
     }
 
-    return new Response(
-      JSON.stringify({ 
-        alerts,
-        summary: {
-          total: alerts.length,
-          warnings: alerts.filter(a => a.alertType === 'warning').length,
-          overBudget: alerts.filter(a => a.alertType === 'over_budget').length
-        }
-      }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200 
+    return createSuccessResponse({
+      alerts,
+      summary: {
+        total: alerts.length,
+        warning: alerts.filter(a => a.alert_type === 'warning').length,
+        critical: alerts.filter(a => a.alert_type === 'critical').length,
+        exceeded: alerts.filter(a => a.alert_type === 'exceeded').length
       }
-    )
+    });
 
-  } catch (error) {
-    console.error('Error in budget alerts function:', error)
-    
-    return new Response(
-      JSON.stringify({ 
-        error: error.message,
-        alerts: []
-      }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400 
-      }
-    )
+  } catch (error: any) {
+    console.error('Budget alerts error:', error);
+    return createErrorResponse(error.message || 'Internal server error', 500);
   }
 })
 

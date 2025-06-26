@@ -10,7 +10,6 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { toast } from 'sonner'
 import { formatCurrency } from '@/lib/utils'
 
 const purchaseSchema = z.object({
@@ -20,7 +19,7 @@ const purchaseSchema = z.object({
   categoryId: z.string().uuid('Categoria é obrigatória'),
   purchaseDate: z.string().min(1, 'Data é obrigatória'),
   notes: z.string().optional(),
-  priority: z.enum(['low', 'normal', 'high', 'urgent']).default('normal')
+  priority: z.enum(['low', 'normal', 'high', 'urgent'])
 })
 
 type PurchaseFormData = z.infer<typeof purchaseSchema>
@@ -39,7 +38,7 @@ interface PurchaseFormProps {
   onCancel?: () => void
 }
 
-export function PurchaseForm({ 
+export default function PurchaseForm({ 
   projectId, 
   categories, 
   onSuccess, 
@@ -107,7 +106,7 @@ export function PurchaseForm({
           receipt_url: receiptUrl,
           notes: data.notes || null,
           priority: data.priority,
-          requested_by: user.id
+          requested_by: user?.id
         })
         .select(`
           *,
@@ -120,14 +119,14 @@ export function PurchaseForm({
         throw error
       }
 
-      toast.success('Compra criada com sucesso!')
+      console.log('Compra criada com sucesso!')
       form.reset()
       setReceiptFile(null)
       onSuccess?.(purchase)
 
     } catch (error: any) {
       console.error('Error creating purchase:', error)
-      toast.error(error.message || 'Erro ao criar compra')
+      console.error(error.message || 'Erro ao criar compra')
     } finally {
       setIsSubmitting(false)
     }

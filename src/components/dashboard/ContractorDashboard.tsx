@@ -20,7 +20,12 @@ interface ProjectStats {
   total_value: number;
 }
 
-export default function ContractorDashboard() {
+interface ContractorDashboardProps {
+  profile: any;
+  onLogout: () => void;
+}
+
+export default function ContractorDashboard({ profile: userProfile, onLogout }: ContractorDashboardProps) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<ProjectStats>({
     total_projects: 0,

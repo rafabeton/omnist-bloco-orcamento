@@ -1,149 +1,120 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+interface AutoApprovalRequest {
+  purchaseId: string;
+  projectId: string;
 }
 
-serve(async (req) => {
-  // Handle CORS preflight requests
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders })
+function createErrorResponse(message: string, status: number = 400): Response {
+  return new Response(
+    JSON.stringify({ error: message }),
+    {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    }
+  );
+}
+
+function createSuccessResponse<T>(data: T, message?: string): Response {
+  return new Response(
+    JSON.stringify({ success: true, data, message }),
+    {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }
+  );
+}
+
+serve(async (req: Request) => {
+  if (req.method !== 'POST') {
+    return createErrorResponse('Method not allowed', 405);
   }
 
   try {
-    const supabaseClient = createClient(
+    const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    const { purchaseId } = await req.json()
+    const { purchaseId, projectId }: AutoApprovalRequest = await req.json()
 
-    if (!purchaseId) {
-      throw new Error('Purchase ID is required')
+    if (!purchaseId || !projectId) {
+      return createErrorResponse('purchaseId and projectId are required');
     }
 
     // Get purchase details
-    const { data: purchase, error: purchaseError } = await supabaseClient
+    const { data: purchase, error: purchaseError } = await supabase
       .from('purchases')
       .select(`
         *,
-        budget_categories(project_id)
+        budget_categories(*)
       `)
       .eq('id', purchaseId)
       .single()
 
-    if (purchaseError || !purchase) {
-      throw new Error('Purchase not found')
+    if (purchaseError) {
+      throw new Error(`Failed to fetch purchase: ${purchaseError.message}`);
     }
 
-    // Get approval rules for this project and category
-    const { data: rules, error: rulesError } = await supabaseClient
-      .from('approval_rules')
-      .select('*')
-      .eq('project_id', purchase.budget_categories.project_id)
-      .eq('is_active', true)
-      .or(`category_id.eq.${purchase.category_id},category_id.is.null`)
-      .order('min_amount', { ascending: false })
+    // Get project budget settings
+    const { data: project, error: projectError } = await supabase
+      .from('projects')
+      .select('auto_approval_limit, budget_total')
+      .eq('id', projectId)
+      .single()
 
-    if (rulesError) {
-      throw new Error('Failed to fetch approval rules')
+    if (projectError) {
+      throw new Error(`Failed to fetch project: ${projectError.message}`);
     }
 
-    // Find applicable rule
-    const applicableRule = rules?.find(rule => 
-      purchase.amount >= rule.min_amount && 
-      (rule.max_amount === null || purchase.amount <= rule.max_amount)
-    )
+    // Check if purchase qualifies for auto-approval
+    const autoApprovalLimit = project.auto_approval_limit || 0
+    const shouldAutoApprove = purchase.amount <= autoApprovalLimit
 
-    if (!applicableRule) {
-      return new Response(
-        JSON.stringify({ 
-          autoApproved: false, 
-          reason: 'No applicable approval rule found' 
-        }),
-        { 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200 
-        }
-      )
-    }
-
-    // Check if auto-approval applies
-    if (purchase.amount <= applicableRule.auto_approve_below) {
+    if (shouldAutoApprove) {
       // Auto-approve the purchase
-      const { error: updateError } = await supabaseClient
+      const { error: updateError } = await supabase
         .from('purchases')
         .update({
           status: 'approved',
           approved_at: new Date().toISOString(),
-          approved_by: null // System approval
+          approved_by: 'system',
+          approval_notes: 'Auto-approved based on project settings'
         })
         .eq('id', purchaseId)
 
       if (updateError) {
-        throw updateError
+        throw new Error(`Failed to auto-approve purchase: ${updateError.message}`);
       }
 
-      // Record the approval
-      const { error: approvalError } = await supabaseClient
-        .from('purchase_approvals')
-        .insert({
-          purchase_id: purchaseId,
-          approver_id: purchase.requested_by, // Self-approval for auto-approved
-          action: 'approved',
-          comments: 'Auto-approved by system based on approval rules'
+      return createSuccessResponse({
+        approved: true,
+        message: 'Purchase auto-approved successfully'
+      });
+    } else {
+      // Mark for manual approval
+      const { error: updateError } = await supabase
+        .from('purchases')
+        .update({
+          status: 'pending_approval',
+          requires_manual_approval: true
         })
+        .eq('id', purchaseId)
 
-      if (approvalError) {
-        console.error('Failed to record approval:', approvalError)
+      if (updateError) {
+        throw new Error(`Failed to update purchase status: ${updateError.message}`);
       }
 
-      return new Response(
-        JSON.stringify({ 
-          autoApproved: true, 
-          reason: 'Amount below auto-approval threshold',
-          threshold: applicableRule.auto_approve_below
-        }),
-        { 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 200 
-        }
-      )
+      return createSuccessResponse({
+        approved: false,
+        message: 'Purchase requires manual approval'
+      });
     }
 
-    // Return required approvers
-    return new Response(
-      JSON.stringify({ 
-        autoApproved: false,
-        requiredApprovers: applicableRule.approver_ids,
-        requiresSequential: applicableRule.requires_sequential,
-        rule: {
-          minAmount: applicableRule.min_amount,
-          maxAmount: applicableRule.max_amount,
-          autoApproveBelow: applicableRule.auto_approve_below
-        }
-      }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 200 
-      }
-    )
-
-  } catch (error) {
-    console.error('Error in auto-approval function:', error)
-    
-    return new Response(
-      JSON.stringify({ 
-        error: error.message,
-        autoApproved: false 
-      }),
-      { 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        status: 400 
-      }
-    )
+  } catch (error: any) {
+    console.error('Auto-approval error:', error);
+    return createErrorResponse(error.message || 'Internal server error', 500);
   }
 })
 

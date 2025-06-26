@@ -11,7 +11,8 @@ import FeedbackButton from '@/components/ui/feedback-button';
 import LoadingSpinner, { InlineLoading } from '@/components/ui/loading-spinner';
 
 interface CommonUserDashboardProps {
-  user: any;
+  profile: any;
+  onLogout: () => void;
 }
 
 // Chaves para localStorage
@@ -26,7 +27,7 @@ interface CalculatorState {
   estimate: number;
 }
 
-export default function CommonUserDashboard({ user }: CommonUserDashboardProps) {
+export default function CommonUserDashboard({ profile, onLogout }: CommonUserDashboardProps) {
   // Estado inicial
   const initialState: CalculatorState = {
     showCalculator: false,
@@ -303,7 +304,7 @@ export default function CommonUserDashboard({ user }: CommonUserDashboardProps) 
                     2. Selecione o padrão de qualidade
                   </h2>
                   <p className="text-gray-600 mb-6">
-                    Projeto selecionado: <strong>{calculatorState.selectedProject.name}</strong>
+                    Projeto selecionado: <strong>{calculatorState.selectedProject?.name}</strong>
                   </p>
                   
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -322,7 +323,7 @@ export default function CommonUserDashboard({ user }: CommonUserDashboardProps) 
                             {getQualityLabel(quality)}
                           </Badge>
                           <div className="text-2xl font-bold text-gray-900 mb-2">
-                            €{calculatorState.selectedProject.basePrice[quality]}/m²
+                            €{calculatorState.selectedProject?.basePrice[quality]}/m²
                           </div>
                           <p className="text-sm text-gray-600">
                             {quality === 'basic' && 'Materiais económicos e funcionais'}
@@ -475,14 +476,14 @@ export default function CommonUserDashboard({ user }: CommonUserDashboardProps) 
       {/* Debug Info */}
       <div className="bg-yellow-100 border border-yellow-300 rounded p-2 text-xs">
         <strong>DEBUG:</strong> showCalculator: {calculatorState.showCalculator.toString()}, 
-        User: {user?.first_name || 'null'}
+        User: {profile?.first_name || 'null'}
       </div>
 
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">
-            Bem-vindo, {user?.first_name || 'Utilizador'}! 👋
+            Bem-vindo, {profile?.first_name || 'Utilizador'}! 👋
           </h1>
           <p className="text-gray-600 mt-1">
             Pronto para começar a sua renovação? Escolha o tipo de projeto e obtenha um orçamento personalizado.
