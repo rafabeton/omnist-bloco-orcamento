@@ -8,16 +8,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [message, setMessage] = useState('')
-  const supabase = createClient()
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setMessage('')
 
-    console.log('Tentando login com:', { email, password: password ? '***' : 'VAZIO' })
-
     try {
+      const supabase = createClient()
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -25,20 +23,15 @@ export default function LoginPage() {
 
       if (error) {
         setMessage(`Erro: ${error.message}`)
-        setLoading(false)
-        return
-      }
-
-      if (data.user && data.session) {
+      } else {
         setMessage('Login realizado com sucesso! Redirecionando...')
-        
-        // Aguardar um momento e redirecionar
         setTimeout(() => {
           window.location.href = '/dashboard'
-        }, 2000)
+        }, 1000)
       }
     } catch (error: any) {
       setMessage(`Erro: ${error.message}`)
+    } finally {
       setLoading(false)
     }
   }
@@ -49,15 +42,11 @@ export default function LoginPage() {
       return
     }
 
-    if (password.length < 6) {
-      setMessage('Password deve ter pelo menos 6 caracteres')
-      return
-    }
-
     setLoading(true)
     setMessage('')
 
     try {
+      const supabase = createClient()
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -65,190 +54,103 @@ export default function LoginPage() {
 
       if (error) {
         setMessage(`Erro: ${error.message}`)
-        setLoading(false)
-        return
-      }
-
-      if (data.user) {
-        // Criar perfil do usuário
-        const { error: profileError } = await supabase
-          .from('user_profiles')
-          .insert({
-            id: data.user.id,
-            email: email,
-            first_name: 'Novo',
-            last_name: 'Utilizador'
-          })
-
-        if (profileError) {
-          console.error('Erro ao criar perfil:', profileError)
-        }
-
+      } else {
         setMessage('Conta criada com sucesso!')
-        
-        // Se o utilizador foi criado e confirmado automaticamente
         if (data.session) {
           setTimeout(() => {
             window.location.href = '/dashboard'
-          }, 2000)
-        } else {
-          setMessage('Conta criada! Verifique o seu email para confirmar.')
-          setLoading(false)
+          }, 1000)
         }
       }
     } catch (error: any) {
       setMessage(`Erro: ${error.message}`)
+    } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: '#f9fafb',
-      padding: '20px'
-    }}>
-      <div style={{
-        width: '100%',
-        maxWidth: '400px',
-        backgroundColor: 'white',
-        padding: '40px',
-        borderRadius: '8px',
-        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)'
-      }}>
-        <div style={{ textAlign: 'center', marginBottom: '30px' }}>
-          <h1 style={{ 
-            fontSize: '24px', 
-            fontWeight: 'bold', 
-            color: '#111827',
-            marginBottom: '8px'
-          }}>
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8">
+        <div>
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
             Omnist Bloco de Orçamento
-          </h1>
-          <p style={{ color: '#6b7280' }}>
+          </h2>
+          <p className="mt-2 text-center text-sm text-gray-600">
             Faça login na sua conta ou crie uma nova
           </p>
         </div>
-
+        
         {message && (
-          <div style={{
-            padding: '12px',
-            marginBottom: '20px',
-            backgroundColor: message.includes('Erro') ? '#fef2f2' : '#f0fdf4',
-            color: message.includes('Erro') ? '#dc2626' : '#16a34a',
-            borderRadius: '6px',
-            border: `1px solid ${message.includes('Erro') ? '#fecaca' : '#bbf7d0'}`
-          }}>
+          <div className={`rounded-md p-4 ${
+            message.includes('Erro') 
+              ? 'bg-red-50 text-red-700 border border-red-200' 
+              : 'bg-green-50 text-green-700 border border-green-200'
+          }`}>
             {message}
           </div>
         )}
 
-        <form onSubmit={handleLogin} style={{ marginBottom: '20px' }}>
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ 
-              display: 'block', 
-              marginBottom: '8px',
-              fontSize: '14px',
-              fontWeight: '500',
-              color: '#374151'
-            }}>
-              Email
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="seu@email.com"
-              required
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '12px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                fontSize: '16px',
-                backgroundColor: loading ? '#f9fafb' : 'white'
-              }}
-            />
-          </div>
-          
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ 
-              display: 'block', 
-              marginBottom: '8px',
-              fontSize: '14px',
-              fontWeight: '500',
-              color: '#374151'
-            }}>
-              Password
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '12px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                fontSize: '16px',
-                backgroundColor: loading ? '#f9fafb' : 'white'
-              }}
-            />
+        <form className="mt-8 space-y-6" onSubmit={handleLogin}>
+          <div className="rounded-md shadow-sm -space-y-px">
+            <div>
+              <label htmlFor="email" className="sr-only">
+                Email
+              </label>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                placeholder="Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={loading}
+              />
+            </div>
+            <div>
+              <label htmlFor="password" className="sr-only">
+                Password
+              </label>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="current-password"
+                required
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={loading}
+              />
+            </div>
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: '100%',
-              padding: '12px',
-              backgroundColor: loading ? '#9ca3af' : '#3b82f6',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              fontSize: '16px',
-              fontWeight: '500',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              marginBottom: '12px'
-            }}
-          >
-            {loading ? 'A entrar...' : 'Entrar'}
-          </button>
-          
-          <button
-            type="button"
-            onClick={handleSignUp}
-            disabled={loading}
-            style={{
-              width: '100%',
-              padding: '12px',
-              backgroundColor: 'white',
-              color: '#374151',
-              border: '1px solid #d1d5db',
-              borderRadius: '6px',
-              fontSize: '16px',
-              fontWeight: '500',
-              cursor: loading ? 'not-allowed' : 'pointer'
-            }}
-          >
-            {loading ? 'A criar conta...' : 'Criar Nova Conta'}
-          </button>
+          <div className="space-y-4">
+            <button
+              type="submit"
+              disabled={loading}
+              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? 'A entrar...' : 'Entrar'}
+            </button>
+            
+            <button
+              type="button"
+              onClick={handleSignUp}
+              disabled={loading}
+              className="group relative w-full flex justify-center py-2 px-4 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? 'A criar conta...' : 'Criar Nova Conta'}
+            </button>
+          </div>
         </form>
 
-        <div style={{ 
-          fontSize: '12px', 
-          color: '#6b7280', 
-          textAlign: 'center',
-          marginTop: '20px'
-        }}>
-          Debug: Email={email ? 'OK' : 'VAZIO'}, Password={password ? 'OK' : 'VAZIO'}
+        <div className="text-center text-xs text-gray-500">
+          Debug: Email={email || 'VAZIO'}, Password={password || 'VAZIO'}
         </div>
       </div>
     </div>
