@@ -1,352 +1,210 @@
-'use client'
+'use client';
 
-import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import { useRouter } from 'next/navigation'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { PurchaseForm } from '@/components/purchases/PurchaseForm'
-import { PurchaseList } from '@/components/purchases/PurchaseList'
-import { BudgetDashboard } from '@/components/budget/BudgetDashboard'
-import { formatCurrency } from '@/lib/utils'
-import { LogOut, Plus, Building, Users, TrendingUp } from 'lucide-react'
-import { toast } from 'sonner'
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+import CommonUserDashboard from '@/components/dashboard/CommonUserDashboard';
+import ContractorDashboard from '@/components/dashboard/ContractorDashboard';
 
-interface Project {
-  id: string
-  name: string
-  description: string | null
-  status: string
-  total_budget: number
-  userRole: string
+interface UserProfile {
+  id: string;
+  email: string;
+  user_type?: 'common_user' | 'contractor' | 'admin';
+  first_name?: string;
+  last_name?: string;
+  company_name?: string;
 }
 
-interface DashboardClientProps {
-  user: any
-  profile: any
-  projects: Project[]
-}
+export default function DashboardClient() {
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-export default function DashboardClient({ user, profile, projects }: DashboardClientProps) {
-  const [selectedProject, setSelectedProject] = useState<Project | null>(null)
-  const [categories, setCategories] = useState<any[]>([])
-  const [showPurchaseForm, setShowPurchaseForm] = useState(false)
-  const [activeTab, setActiveTab] = useState<'overview' | 'purchases' | 'budget'>('overview')
-  const router = useRouter()
-  const supabase = createClient()
+  const router = useRouter();
+  const supabase = createClient();
 
   useEffect(() => {
-    if (projects.length > 0 && !selectedProject) {
-      setSelectedProject(projects[0])
-    }
-  }, [projects, selectedProject])
+    checkUserProfile();
+  }, []);
 
-  useEffect(() => {
-    if (selectedProject) {
-      fetchCategories()
-    }
-  }, [selectedProject])
-
-  const fetchCategories = async () => {
-    if (!selectedProject) return
-
+  const checkUserProfile = async () => {
     try {
-      const { data, error } = await supabase
-        .from('budget_categories')
-        .select('*')
-        .eq('project_id', selectedProject.id)
-        .eq('is_active', true)
-        .order('name')
-
-      if (error) {
-        throw error
+      // Verificar se usuário está autenticado
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      
+      if (authError || !user) {
+        console.error('Erro de autenticação:', authError);
+        router.push('/login');
+        return;
       }
 
-      setCategories(data || [])
+      // Buscar perfil do usuário
+      const { data: profileData, error: profileError } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError) {
+        console.error('Erro ao buscar perfil:', profileError);
+        
+        // Se não encontrou perfil, criar um básico
+        const { error: insertError } = await supabase
+          .from('user_profiles')
+          .insert({
+            id: user.id,
+            email: user.email,
+            first_name: '',
+            last_name: '',
+            user_type: 'common_user'
+          });
+
+        if (insertError) {
+          console.error('Erro ao criar perfil:', insertError);
+          setError('Erro ao configurar perfil do usuário');
+          return;
+        }
+
+        // Redirecionar para setup se perfil não existe ou está incompleto
+        router.push('/setup');
+        return;
+      }
+
+      // Verificar se perfil está completo
+      if (!profileData.user_type || !profileData.first_name) {
+        router.push('/setup');
+        return;
+      }
+
+      setProfile(profileData);
     } catch (error) {
-      console.error('Error fetching categories:', error)
+      console.error('Erro geral:', error);
+      setError('Erro ao carregar dashboard');
+    } finally {
+      setLoading(false);
     }
-  }
+  };
 
   const handleLogout = async () => {
     try {
-      await supabase.auth.signOut()
-      router.push('/login')
+      await supabase.auth.signOut();
+      router.push('/login');
     } catch (error) {
-      toast.error('Erro ao fazer logout')
+      console.error('Erro ao fazer logout:', error);
     }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Carregando dashboard...</p>
+          </div>
+        </div>
+      </div>
+    );
   }
 
-  const createSampleData = async () => {
-    if (!selectedProject) return
-
-    try {
-      // Create sample categories
-      const sampleCategories = [
-        { name: 'Materiais', budgeted_amount: 5000, description: 'Materiais de construção' },
-        { name: 'Mão de Obra', budgeted_amount: 8000, description: 'Custos com pessoal' },
-        { name: 'Equipamentos', budgeted_amount: 3000, description: 'Aluguer de equipamentos' },
-        { name: 'Outros', budgeted_amount: 1000, description: 'Despesas diversas' }
-      ]
-
-      for (const category of sampleCategories) {
-        await supabase
-          .from('budget_categories')
-          .insert({
-            project_id: selectedProject.id,
-            ...category
-          })
-      }
-
-      toast.success('Dados de exemplo criados!')
-      fetchCategories()
-    } catch (error) {
-      console.error('Error creating sample data:', error)
-      toast.error('Erro ao criar dados de exemplo')
-    }
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-600 text-6xl mb-4">⚠️</div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Erro no Dashboard</h1>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            Tentar Novamente
+          </button>
+        </div>
+      </div>
+    );
   }
-
-  const canApprove = selectedProject?.userRole === 'manager' || selectedProject?.userRole === 'approver'
 
   if (!profile) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <h2 className="text-xl font-semibold mb-4">A configurar perfil...</h2>
-          <p className="text-gray-600">Por favor, aguarde enquanto configuramos a sua conta.</p>
+          <div className="text-gray-400 text-6xl mb-4">👤</div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Perfil não encontrado</h1>
+          <p className="text-gray-600 mb-4">Redirecionando para configuração...</p>
         </div>
       </div>
-    )
+    );
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
+      {/* Header Global */}
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <div>
-              <h1 className="text-xl font-semibold text-gray-900">
+            {/* Logo e Título */}
+            <div className="flex items-center space-x-4">
+              <h1 className="text-xl font-bold text-gray-900">
                 Omnist Bloco de Orçamento
               </h1>
-              <p className="text-sm text-gray-600">
-                Bem-vindo, {profile.first_name} {profile.last_name}
-              </p>
+              {profile.user_type === 'contractor' && (
+                <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
+                  PRO
+                </span>
+              )}
             </div>
-            <Button variant="outline" onClick={handleLogout}>
-              <LogOut className="w-4 h-4 mr-2" />
-              Sair
-            </Button>
+
+            {/* Menu do Usuário */}
+            <div className="flex items-center space-x-4">
+              <div className="text-sm text-gray-600">
+                Olá, {profile.first_name || profile.email}
+                {profile.company_name && (
+                  <span className="block text-xs text-gray-500">
+                    {profile.company_name}
+                  </span>
+                )}
+              </div>
+              
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => router.push('/setup')}
+                  className="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100"
+                  title="Configurações"
+                >
+                  ⚙️
+                </button>
+                
+                <button
+                  onClick={handleLogout}
+                  className="px-3 py-1 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700"
+                >
+                  Sair
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {projects.length === 0 ? (
-          <div className="text-center py-12">
-            <Building className="w-16 h-16 mx-auto text-gray-300 mb-4" />
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">
-              Nenhum projeto encontrado
-            </h2>
-            <p className="text-gray-600 mb-6">
-              Você ainda não está associado a nenhum projeto. Entre em contacto com o administrador.
-            </p>
-          </div>
+      {/* Conteúdo Principal */}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Renderizar dashboard baseado no tipo de usuário */}
+        {profile.user_type === 'contractor' ? (
+          <ContractorDashboard />
         ) : (
-          <div className="space-y-6">
-            {/* Project Selector */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Building className="w-5 h-5 mr-2" />
-                  Projetos
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {projects.map((project) => (
-                    <div
-                      key={project.id}
-                      className={`p-4 border rounded-lg cursor-pointer transition-colors ${
-                        selectedProject?.id === project.id
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                      onClick={() => setSelectedProject(project)}
-                    >
-                      <h3 className="font-medium">{project.name}</h3>
-                      {project.description && (
-                        <p className="text-sm text-gray-600 mt-1">{project.description}</p>
-                      )}
-                      <div className="flex justify-between items-center mt-2">
-                        <Badge variant="outline">{project.status}</Badge>
-                        <span className="text-sm font-medium">
-                          {formatCurrency(project.total_budget)}
-                        </span>
-                      </div>
-                      <div className="mt-2">
-                        <Badge variant="secondary" className="text-xs">
-                          {project.userRole}
-                        </Badge>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {selectedProject && (
-              <>
-                {/* Tabs */}
-                <div className="border-b border-gray-200">
-                  <nav className="-mb-px flex space-x-8">
-                    {[
-                      { key: 'overview', label: 'Visão Geral', icon: TrendingUp },
-                      { key: 'purchases', label: 'Compras', icon: Plus },
-                      { key: 'budget', label: 'Orçamento', icon: TrendingUp }
-                    ].map((tab) => {
-                      const Icon = tab.icon
-                      return (
-                        <button
-                          key={tab.key}
-                          onClick={() => setActiveTab(tab.key as any)}
-                          className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center ${
-                            activeTab === tab.key
-                              ? 'border-blue-500 text-blue-600'
-                              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                          }`}
-                        >
-                          <Icon className="w-4 h-4 mr-2" />
-                          {tab.label}
-                        </button>
-                      )
-                    })}
-                  </nav>
-                </div>
-
-                {/* Tab Content */}
-                <div className="space-y-6">
-                  {activeTab === 'overview' && (
-                    <div className="space-y-6">
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>Projeto: {selectedProject.name}</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <div>
-                              <h4 className="font-medium text-gray-900">Status</h4>
-                              <Badge variant="outline" className="mt-1">
-                                {selectedProject.status}
-                              </Badge>
-                            </div>
-                            <div>
-                              <h4 className="font-medium text-gray-900">Orçamento Total</h4>
-                              <p className="text-lg font-semibold mt-1">
-                                {formatCurrency(selectedProject.total_budget)}
-                              </p>
-                            </div>
-                            <div>
-                              <h4 className="font-medium text-gray-900">Seu Papel</h4>
-                              <Badge variant="secondary" className="mt-1">
-                                {selectedProject.userRole}
-                              </Badge>
-                            </div>
-                          </div>
-                          {categories.length === 0 && (
-                            <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                              <p className="text-sm text-yellow-800">
-                                Este projeto ainda não tem categorias de orçamento configuradas.
-                              </p>
-                              <Button 
-                                size="sm" 
-                                onClick={createSampleData}
-                                className="mt-2"
-                              >
-                                Criar Dados de Exemplo
-                              </Button>
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                      
-                      {categories.length > 0 && (
-                        <BudgetDashboard projectId={selectedProject.id} />
-                      )}
-                    </div>
-                  )}
-
-                  {activeTab === 'purchases' && (
-                    <div className="space-y-6">
-                      {categories.length === 0 ? (
-                        <Card>
-                          <CardContent className="text-center py-8">
-                            <p className="text-gray-600 mb-4">
-                              Crie categorias de orçamento antes de adicionar compras.
-                            </p>
-                            <Button onClick={createSampleData}>
-                              Criar Dados de Exemplo
-                            </Button>
-                          </CardContent>
-                        </Card>
-                      ) : (
-                        <>
-                          <div className="flex justify-between items-center">
-                            <h2 className="text-xl font-semibold">Gestão de Compras</h2>
-                            <Button onClick={() => setShowPurchaseForm(!showPurchaseForm)}>
-                              <Plus className="w-4 h-4 mr-2" />
-                              {showPurchaseForm ? 'Cancelar' : 'Nova Compra'}
-                            </Button>
-                          </div>
-
-                          {showPurchaseForm && (
-                            <PurchaseForm
-                              projectId={selectedProject.id}
-                              categories={categories}
-                              onSuccess={() => {
-                                setShowPurchaseForm(false)
-                                // Refresh will happen automatically via PurchaseList
-                              }}
-                              onCancel={() => setShowPurchaseForm(false)}
-                            />
-                          )}
-
-                          <PurchaseList
-                            projectId={selectedProject.id}
-                            canApprove={canApprove}
-                            onPurchaseUpdate={fetchCategories}
-                          />
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                  {activeTab === 'budget' && (
-                    <div className="space-y-6">
-                      {categories.length === 0 ? (
-                        <Card>
-                          <CardContent className="text-center py-8">
-                            <p className="text-gray-600 mb-4">
-                              Nenhuma categoria de orçamento encontrada.
-                            </p>
-                            <Button onClick={createSampleData}>
-                              Criar Dados de Exemplo
-                            </Button>
-                          </CardContent>
-                        </Card>
-                      ) : (
-                        <BudgetDashboard projectId={selectedProject.id} />
-                      )}
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
+          <CommonUserDashboard />
         )}
-      </div>
+      </main>
+
+      {/* Debug Info (apenas em desenvolvimento) */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="fixed bottom-4 right-4 bg-black text-white p-2 rounded text-xs">
+          <div>Usuário: {profile.user_type}</div>
+          <div>ID: {profile.id.slice(0, 8)}...</div>
+        </div>
+      )}
     </div>
-  )
+  );
 }
 
