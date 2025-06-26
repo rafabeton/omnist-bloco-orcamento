@@ -6,6 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { mockProjectTypes, type ProjectType } from '@/lib/mock-data';
+import { analytics, trackCalculatorStart } from '@/lib/analytics';
+import FeedbackButton from '@/components/ui/feedback-button';
+import LoadingSpinner, { InlineLoading } from '@/components/ui/loading-spinner';
 
 interface CommonUserDashboardProps {
   user: any;
@@ -35,6 +38,7 @@ export default function CommonUserDashboard({ user }: CommonUserDashboardProps) 
   };
 
   const [calculatorState, setCalculatorState] = useState<CalculatorState>(initialState);
+  const [calculatorStartTime, setCalculatorStartTime] = useState<number | null>(null);
 
   // Carregar estado do localStorage na inicialização
   useEffect(() => {
@@ -67,6 +71,11 @@ export default function CommonUserDashboard({ user }: CommonUserDashboardProps) 
 
   const openCalculator = useCallback(() => {
     console.log('Abrindo calculadora...');
+    
+    // Analytics tracking
+    trackCalculatorStart();
+    setCalculatorStartTime(Date.now());
+    
     updateCalculatorState({
       showCalculator: true,
       step: 1,
@@ -79,11 +88,22 @@ export default function CommonUserDashboard({ user }: CommonUserDashboardProps) 
 
   const closeCalculator = useCallback(() => {
     console.log('Fechando calculadora...');
+    
+    // Analytics tracking - tempo gasto
+    if (calculatorStartTime) {
+      const timeSpent = Date.now() - calculatorStartTime;
+      analytics.trackCalculatorTime(timeSpent);
+    }
+    
     updateCalculatorState({ showCalculator: false });
-  }, [updateCalculatorState]);
+  }, [updateCalculatorState, calculatorStartTime]);
 
   const selectProject = useCallback((project: ProjectType) => {
     console.log('Projeto selecionado:', project.name);
+    
+    // Analytics tracking
+    analytics.trackCalculatorStep(2, project.name);
+    
     updateCalculatorState({
       selectedProject: project,
       step: 2
@@ -92,11 +112,15 @@ export default function CommonUserDashboard({ user }: CommonUserDashboardProps) 
 
   const selectQuality = useCallback((quality: 'basic' | 'medium' | 'luxury') => {
     console.log('Qualidade selecionada:', quality);
+    
+    // Analytics tracking
+    analytics.trackCalculatorStep(3, `${calculatorState.selectedProject?.name}_${quality}`);
+    
     updateCalculatorState({
       selectedQuality: quality,
       step: 3
     });
-  }, [updateCalculatorState]);
+  }, [updateCalculatorState, calculatorState.selectedProject]);
 
   const calculateEstimate = useCallback((inputArea: number) => {
     if (!calculatorState.selectedProject || !calculatorState.selectedQuality) return;
@@ -105,6 +129,15 @@ export default function CommonUserDashboard({ user }: CommonUserDashboardProps) 
     const totalEstimate = basePrice * inputArea;
     
     console.log('Calculando estimativa:', { inputArea, basePrice, totalEstimate });
+    
+    // Analytics tracking - cálculo completo
+    analytics.trackProjectSelection({
+      projectType: calculatorState.selectedProject.name,
+      quality: calculatorState.selectedQuality,
+      area: inputArea,
+      estimate: totalEstimate,
+      timestamp: new Date(),
+    });
     
     updateCalculatorState({
       estimate: totalEstimate,
@@ -429,6 +462,9 @@ export default function CommonUserDashboard({ user }: CommonUserDashboardProps) 
             </CardContent>
           </Card>
         </div>
+        
+        {/* Feedback Button */}
+        <FeedbackButton context="calculator" />
       </div>
     );
   }
@@ -555,6 +591,9 @@ export default function CommonUserDashboard({ user }: CommonUserDashboardProps) 
           </div>
         </CardContent>
       </Card>
+      
+      {/* Feedback Button */}
+      <FeedbackButton context="dashboard" />
     </div>
   );
 }
